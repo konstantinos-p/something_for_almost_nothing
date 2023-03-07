@@ -1,0 +1,11 @@
+prngkeyseed: 0
+epochs: 10
+mode: 'standard'
+CKPT_DIR: 'ckpts'
+dataset_name: 'fashion_mnist'
+size_validation: 10000
+size_training: 100
+model: 'LeNet'
+batch_size_train: 32
+summary: False
+in_distribution: True

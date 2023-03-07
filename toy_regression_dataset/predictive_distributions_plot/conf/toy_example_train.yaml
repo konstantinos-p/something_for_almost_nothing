@@ -1,0 +1,2 @@
+defaults:
+  - hyperparameters: hyperparameters_standard

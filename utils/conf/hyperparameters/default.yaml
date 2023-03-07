@@ -1,0 +1,4 @@
+dataset_dir: 'default'
+dataset_name: 'svhn_cropped'
+size_training: 10000
+size_validation: 10000

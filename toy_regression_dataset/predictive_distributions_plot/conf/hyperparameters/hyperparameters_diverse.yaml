@@ -1,0 +1,8 @@
+prngkeyseed: 0
+learning_rate: 0.001
+epochs: 5000
+mode: 'diverse'
+CKPT_DIR: 'ckpts'
+mylambda: 1000
+prior_var: 0.0001
+beta: 0.00001
