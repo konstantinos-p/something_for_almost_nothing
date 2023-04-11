@@ -1,0 +1,15 @@
+ensemble_size: 10
+epochs: 10
+mode: 'standard'
+CKPT_DIR: 'ckpts'
+dataset_name: 'Cifar10'
+size_validation: 10000
+size_training: 100
+model: 'LeNet'
+batch_size_train: 100
+summary: False
+delete_checkpoints: False
+in_distribution: True
+beta_start: 4
+beta_end: -1
+final_delta: 0.25

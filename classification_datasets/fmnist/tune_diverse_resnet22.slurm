@@ -9,6 +9,7 @@
 #SBATCH --output=fmnist_tune_diverse_resnet22%j.out      # nom du fichier de sortie
 #SBATCH --error=fmnist_tune_diverse_resnet22%j.out       # nom du fichier d'erreur (ici commun avec la sortie)
 
+
 # Nettoyage des modules charges en interactif et herites par defaut
 module purge
 
@@ -19,4 +20,4 @@ source ~/.bash_profile
 conda activate flax
 
 # Execution du code
-python train_models.py --multirun hyperparameters=diverse server=jeanzay hyperparameters.model='FixupWideResNet22_SmallInputs' hyperparameters.epochs=20,50,80,100 optimizer.learning_rate=0.0001,0.001 hyperparameters.mylambda=1,10,100,1000,10000 hyperparameters.prior_var=0.1,0.01,0.001,0.0001,0.00001,0.000001 hyperparameters.beta=0.1,0.01,0.001,0.0001,0.00001,0.000001 hydra.sweeper.direction=minimize hydra.job.chdir=True hydra/sweeper=optuna hydra.sweeper.n_trials=100
+python train_models.py --multirun hyperparameters.size_training=1000 hyperparameters=diverse server=jeanzay hyperparameters.delete_checkpoints=True hyperparameters.model='FixupWideResNet22_SmallInputs' hyperparameters.ensemble_size=10 hyperparameters.epochs=10,20,50,80,100,200,500 optimizer.learning_rate=0.0001,0.001 hyperparameters.mylambda=1,10,100,1000,10000 hyperparameters.prior_var=0.1,0.01,0.001,0.0001,0.00001,0.000001 hyperparameters.beta=0.1,0.01,0.001,0.0001,0.00001,0.000001 hydra.sweeper.direction=minimize hydra.job.chdir=True hydra/sweeper=optuna hydra.sweeper.n_trials=15 hydra.sweep.dir='multirun/tune_diverse_resnet22'

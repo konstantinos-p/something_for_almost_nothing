@@ -19,4 +19,4 @@ source ~/.bash_profile
 conda activate flax
 
 # Execution du code
-python -u train_models.py --multirun hyperparameters=standard server=jeanzay hyperparameters.model='FixupWideResNet22_SmallInputs' optimizer=adamw hyperparameters.prngkeyseed="range(0,10)" optimizer.learning_rate=0.001 hyperparameters.epochs=40 hydra.sweeper.direction=maximize hydra.job.chdir=True hydra/sweeper=optuna hydra/sweeper/sampler=grid
+python -u train_models.py --multirun hyperparameters.size_training=1000 hyperparameters=standard server=jeanzay hyperparameters.model='FixupWideResNet22_SmallInputs' hyperparameters.ensemble_size=10 optimizer=adamw optimizer.learning_rate=0.001 hyperparameters.epochs=80 hydra.sweeper.direction=minimize hydra.job.chdir=True hydra/sweeper=optuna hydra/sweeper/sampler=grid hydra.sweep.dir='multirun/train_standard_resnet22'

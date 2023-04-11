@@ -1,0 +1,10 @@
+ensemble_size: 1
+epochs: 10
+mode: 'standard'
+CKPT_DIR: 'ckpts'
+dataset_name: 'Cifar10_dominoes'
+model: 'FixupWideResNet22'
+batch_size_train: 32
+summary: False
+in_distribution: True
+delete_checkpoints: False

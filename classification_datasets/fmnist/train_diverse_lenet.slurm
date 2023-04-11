@@ -19,4 +19,4 @@ source ~/.bash_profile
 conda activate flax
 
 # Execution du code
-python train_models.py --multirun hyperparameters=diverse server=jeanzay hyperparameters.model='LeNet' hyperparameters.prngkeyseed="range(0,10)" hyperparameters.epochs=1000 optimizer.learning_rate=0.0001 hyperparameters.mylambda=1 hyperparameters.prior_var=0.1 hyperparameters.beta=0.001 hydra.sweeper.direction=minimize hydra.job.chdir=True hydra/sweeper=optuna hydra/sweeper/sampler=grid
+python train_models.py --multirun hyperparameters=diverse server=jeanzay hyperparameters.model='LeNet' hyperparameters.ensemble_size=10 optimizer=adamw hyperparameters.epochs=100 optimizer.learning_rate=0.0001 hyperparameters.mylambda=100 hyperparameters.prior_var=0.1 hyperparameters.beta=0.1 hydra.sweeper.direction=minimize hydra.job.chdir=True hydra/sweeper=optuna hydra/sweeper/sampler=grid hydra.sweep.dir='multirun/train_diverse_lenet'

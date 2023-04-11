@@ -19,4 +19,4 @@ source ~/.bash_profile
 conda activate flax
 
 # Execution du code
-python train_models.py --multirun hyperparameters=diverse server=jeanzay hyperparameters.unlabeled_batch_size='full' hyperparameters.model='MLP_Large' hyperparameters.prngkeyseed="range(0,10)" hyperparameters.epochs=50 optimizer.learning_rate=0.0001 hyperparameters.mylambda=10000 hyperparameters.prior_var=0.01 hyperparameters.beta=0.01 hydra.sweeper.direction=maximize hydra.job.chdir=True hydra/sweeper=optuna hydra/sweeper/sampler=grid
+python train_models.py --multirun hyperparameters=diverse server=jeanzay hyperparameters.model='MLP_Large' hyperparameters.ensemble_size=10 hyperparameters.epochs=100 optimizer.learning_rate=0.0001 hyperparameters.mylambda=1000 hyperparameters.prior_var=0.01 hyperparameters.beta=0.1 hydra.sweeper.direction=minimize hydra.job.chdir=True hydra/sweeper=optuna hydra/sweeper/sampler=grid hydra.sweep.dir='multirun/train_diverse_mlp'

@@ -229,8 +229,11 @@ MLP_Small = partial(MLP, hidden1=300, hidden2=200, hidden3=100)
 _FixupWideResNet10 = partial(FixupWideResNet, depth=10, widen_factor=1, num_classes=10, dropRate=0.3)
 
 # Specifically for fashion mnist
+FixupWideResNet16_SmallInputs = partial(FixupWideResNet, depth=16, widen_factor=4, dropRate=0.3,
+                                        final_average_pooling=2)
 FixupWideResNet22_SmallInputs = partial(FixupWideResNet, depth=22, widen_factor=4, dropRate=0.3,
                                         final_average_pooling=2)
+
 
 
 
