@@ -10,8 +10,10 @@ from flax.linen.activation import softmax
 from jax import jit
 from utils.train import cross_entropy_loss, compute_metrics
 from utils.datasets import dataset_num_classes, dataset_dimensions, get_datasets
+from utils.datasets import labels_dominoes, full_random_crop_function, full_random_flip_function
 from utils.benchmarking_models import benchmarking_models
 from flax import linen as nn
+from matplotlib import pyplot as plt
 
 
 def beta_coef(epoch, cfg):
@@ -217,6 +219,15 @@ def train_epoch_dice(states_list_dict, adversarial_state, train_ds, rngs, cfg, e
         dropout_rngs.append(dropout_rng)
     for perm in perms:
         batch = {k: v[perm, ...] for k, v in train_ds.items()}
+        try:
+            if cfg.hyperparameters.augmentations:
+                aug_key, other_key = jax.random.split(dummy_rng)
+                batch['image'] = full_random_flip_function(batch['image'], aug_key)
+                if cfg.hyperparameters.dataset_name == 'Cifar10' or cfg.hyperparameters.dataset_name == 'Cifar100':
+                    aug_key, other_key = jax.random.split(other_key)
+                    batch['image'] = full_random_crop_function(batch['image'], aug_key)
+        except:
+            do_nothing = 1
         states_list_dict, adversarial_state, dropout_rngs = vceb_and_diversity_loss_step(
                                                                         states_list_dict,
                                                                         adversarial_state,

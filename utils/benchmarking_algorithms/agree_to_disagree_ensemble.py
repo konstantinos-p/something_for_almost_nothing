@@ -4,10 +4,11 @@ import jax.numpy as jnp
 from flax.training import train_state, checkpoints
 import os
 from utils.train import create_train_state, cross_entropy_loss, compute_metrics_jitable, eval_model, evaluate_saved_models
-from utils.datasets import dataset_num_classes, get_simple_ood_datasets
+from utils.datasets import dataset_num_classes, get_simple_ood_datasets, get_datasets
 from flax import linen as nn
 from jax import jit
 from functools import partial
+import math
 
 
 def train_agree_to_disagree_ensemble(cfg: DictConfig):
@@ -26,8 +27,11 @@ def train_agree_to_disagree_ensemble(cfg: DictConfig):
     if cfg.hyperparameters.dataset_name == 'fashion_mnist_dominoes' or \
             cfg.hyperparameters.dataset_name == 'Cifar10_dominoes':
         train_ds, test_ds, unlabeled_ds, validation_ds = get_simple_ood_datasets(cfg)
-    elif False:
-        a=1
+    elif cfg.hyperparameters.dataset_name == 'Cifar10' or \
+             cfg.hyperparameters.dataset_name == 'fashion_mnist' or \
+             cfg.hyperparameters.dataset_name == 'Cifar100' or \
+             cfg.hyperparameters.dataset_name == 'svhn_cropped':
+        train_ds, test_ds, unlabeled_ds, validation_ds = get_datasets(cfg)
 
     rng = jax.random.PRNGKey(0)#0
     rng, init_rng = jax.random.split(rng)

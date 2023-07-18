@@ -15,7 +15,10 @@ import chex
 import math
 from functools import partial
 from jax import jit
-from utils.datasets import get_simple_ood_datasets, get_datasets, dataset_num_classes, dataset_dimensions, labels_dominoes
+from utils.datasets import get_simple_ood_datasets, get_datasets, dataset_num_classes, dataset_dimensions
+from utils.datasets import labels_dominoes, full_random_crop_function, full_random_flip_function
+from jax.tree_util import Partial
+from matplotlib import pyplot as plt
 
 ModuleDef = Any
 KeyArray = random.KeyArray
@@ -243,7 +246,111 @@ def train_step_diverse(state, batch_training, batch_unlabeled, dropout_rng, myla
     return state, metrics, new_dropout_rng
 
 
-#@jax.jit
+
+@partial(jit, static_argnames=['indice'])
+def fast_per_sample_logits(params, state, dropout_rng, x, indice):
+    logits = state.apply_fn(params, x, train=True, rngs={'dropout': dropout_rng})
+    return logits[indice]
+
+
+def fast_unlabeled_jacrev_per_sample(params, state, batch_x, indexes, dropout_rng, num_classes):
+
+    list_logits = []
+
+    for i in range(num_classes):
+
+        list_logits.append(Partial(fast_per_sample_logits, indice=i))
+
+    unlabeled_loss_grad_fns = []
+    for i in range(len(list_logits)):
+        unlabeled_loss_grad_fns.append(jax.grad(list_logits[i]))
+
+    def vmapped_switch(params, state, dropout_rng, x, index):
+        return jax.lax.switch(index, unlabeled_loss_grad_fns, params, state, dropout_rng, x)
+
+    return jax.vmap(vmapped_switch, (None, None, None, 0, 0))(params, state, dropout_rng, batch_x, indexes)
+
+
+@partial(jit, static_argnames=['num_classes'])
+def train_step_diverse_fast(state, batch_training, batch_unlabeled, dropout_rng, mylambda, prior_var, beta, num_classes):
+    """
+    Trains the neural network for a single step using the fast diverse objective. In particular, instead of computing
+    the full Jacobian per unlabeled sample we sample a random class and compute the gradient with respect to that class.
+    "
+    Parameters
+    ----------
+    state : train_state.TrainState
+        The initial training state of the experiment.
+    batch_training : dict
+        Dictionary with keys 'image' and 'label' corresponding to a batch of the training set.
+    batch_unlabeled : dict
+        Dictionary with keys 'image' and 'label' corresponding to a batch of the unlabeled set.
+    dropout_rng : jax.random.PRNGKey
+        Pseudo-random number generator (PRNG) key for the randomness of the dropout layers.
+
+    Returns
+    -------
+    state : train_state.TrainState
+        The training state of the experiment.
+    metrics : dict
+        A python dictionary with keys "loss" and "accuracy" corresponding to the cross-entropy loss and the accuracy
+        for some logits and labels.
+    new_dropout_rng : jax.random.PRNGKey
+        New pseudo-random number generator (PRNG) key for the randomness of the dropout layers.
+
+    """
+    dropout_rng, key = jax.random.split(dropout_rng)
+
+    # Training set grads
+    def per_sample_loss_and_logits(params, x, y):
+        logits = state.apply_fn(params, x, train=True, rngs={'dropout': dropout_rng})
+        return cross_entropy_loss(logits=logits, labels=y, num_classes=num_classes), logits
+    train_loss_grad_fn = jax.vmap(jax.grad(per_sample_loss_and_logits, has_aux=True), (None, 0, 0))
+    train_grads_per_sample, train_logits_per_sample = train_loss_grad_fn(state.params, batch_training['image'],
+                                                                         batch_training['label'])
+
+    # Unlabeled set grads
+    key_to_use, key = jax.random.split(key)
+    indexes = jax.random.randint(key=key_to_use,
+                                 shape=[batch_unlabeled['image'].shape[0]],
+                                 minval=0,
+                                 maxval=num_classes)
+
+    jacrev_per_sample = fast_unlabeled_jacrev_per_sample(state.params,
+                                                         state,
+                                                         batch_unlabeled['image'],
+                                                         indexes,
+                                                         dropout_rng,
+                                                         num_classes)
+    def diversity_gradient(train_grads, unlabeled_jacobians, mylambda, prior_var):
+
+        term1_pow2 = jax.tree_map(lambda x: jnp.mean((-x) ** 2, axis=0), train_grads)
+        term1_pow3 = jax.tree_map(lambda x: jnp.mean((-x) ** 3, axis=0), train_grads)
+        term1 = jax.tree_map(lambda x, y: -(mylambda * x + 1 / prior_var) ** (-2) * (2 * mylambda * y), term1_pow2,
+                             term1_pow3)
+
+        term2 = jax.tree_map(lambda x: jnp.mean(x ** 2, axis=[0]), unlabeled_jacobians)
+
+        term3 = jax.tree_map(lambda x: (mylambda * x + 1 / prior_var) ** (-1), term1_pow2)
+
+        term4 = jax.tree_map(lambda x: jnp.mean(2 * x ** 3, axis=[0]), unlabeled_jacobians)
+
+        return jax.tree_map(lambda x, y, z, k: x * y + z * k, term1, term2, term3, term4)
+
+    diversity_gradient_rescaled = jax.tree_map(lambda x: x * beta, diversity_gradient(train_grads_per_sample, jacrev_per_sample,
+                                                                 mylambda, prior_var))
+    '''
+    Note that the diverse gradients that we compute should be subtracted from the normal ones.
+    '''
+    grads_total = jax.tree_map(lambda x, y: x - y, jax.tree_map(lambda x: jnp.mean(x, axis=0), train_grads_per_sample),
+                               diversity_gradient_rescaled)
+
+    state = state.apply_gradients(grads=grads_total)
+    metrics = compute_metrics_jitable(logits=train_logits_per_sample, labels=batch_training['label'], num_classes=num_classes)
+    return state, metrics, key
+
+
+# @jax.jit
 @partial(jit, static_argnums=3)
 def train_step_standard(state, batch, dropout_rng, num_classes):
     """
@@ -332,40 +439,83 @@ def train_epoch_diverse(state, train_ds, unlabeled_ds, epoch, rng, cfg, random_k
         The new training state of the experiment.
 
     """
-    train_ds_size = len(train_ds['image'])
-    steps_per_epoch = train_ds_size // cfg.hyperparameters.batch_size_train
-
-    unlabeled_ds_size = len(unlabeled_ds['image'])
-    batch_size_full = unlabeled_ds_size // steps_per_epoch
-
-    perms_train = jax.random.permutation(rng, train_ds_size)
-    perms_train = perms_train[:steps_per_epoch*cfg.hyperparameters.batch_size_train]
-    perms_train = perms_train.reshape((steps_per_epoch, cfg.hyperparameters.batch_size_train))
-
     if cfg.hyperparameters.unlabeled_batch_size == 'same':
-        batch_size_unlabeled = cfg.hyperparameters.batch_size_train
-    elif cfg.hyperparameters.unlabeled_batch_size == 'full':
-        batch_size_unlabeled = batch_size_full
 
-    perms_unlabeled = jax.random.permutation(rng, unlabeled_ds_size)
-    if steps_per_epoch * batch_size_unlabeled <= perms_unlabeled.shape[0]:
-        perms_unlabeled = perms_unlabeled[:steps_per_epoch * batch_size_unlabeled]
-    else:
-        fit = int((steps_per_epoch * batch_size_unlabeled) / perms_unlabeled.shape[0])
-        rem = ((steps_per_epoch * batch_size_unlabeled) % perms_unlabeled.shape[0])
-        perms_unlabeled = jnp.concatenate(fit * [perms_unlabeled])
-        perms_unlabeled = jnp.concatenate([perms_unlabeled, perms_unlabeled[0:rem]])
-    perms_unlabeled = perms_unlabeled.reshape((steps_per_epoch, batch_size_unlabeled))
+        train_ds_size = len(train_ds['image'])
+        unlabeled_ds_size = len(unlabeled_ds['image'])
+        steps_per_epoch = train_ds_size // cfg.hyperparameters.batch_size_train
+        batch_size_unlabeled = cfg.hyperparameters.batch_size_train
+
+        perms_train = jax.random.permutation(rng, train_ds_size)
+        perms_unlabeled = jax.random.permutation(rng, unlabeled_ds_size)
+        perms_train = perms_train[:steps_per_epoch*cfg.hyperparameters.batch_size_train]
+        perms_train = perms_train.reshape((steps_per_epoch, cfg.hyperparameters.batch_size_train))
+
+        if steps_per_epoch * batch_size_unlabeled <= perms_unlabeled.shape[0]:
+            perms_unlabeled = perms_unlabeled[:steps_per_epoch * batch_size_unlabeled]
+        else:
+            fit = int((steps_per_epoch * batch_size_unlabeled) / perms_unlabeled.shape[0])
+            rem = ((steps_per_epoch * batch_size_unlabeled) % perms_unlabeled.shape[0])
+            perms_unlabeled = jnp.concatenate(fit * [perms_unlabeled])
+            perms_unlabeled = jnp.concatenate([perms_unlabeled, perms_unlabeled[0:rem]])
+        perms_unlabeled = perms_unlabeled.reshape((steps_per_epoch, batch_size_unlabeled))
+
+    elif cfg.hyperparameters.unlabeled_batch_size == 'full':
+
+        train_ds_size = len(train_ds['image'])
+        unlabeled_ds_size = len(unlabeled_ds['image'])
+        steps_per_epoch = unlabeled_ds_size // cfg.hyperparameters.batch_size_train
+
+        rng, rng_in = jax.random.split(rng)
+        perms_train = jax.random.permutation(rng_in, train_ds_size)
+        rng, rng_in = jax.random.split(rng)
+        perms_unlabeled = jax.random.permutation(rng_in, unlabeled_ds_size)
+
+        perms_unlabeled = perms_unlabeled[:steps_per_epoch*cfg.hyperparameters.batch_size_train]
+        perms_unlabeled = perms_unlabeled.reshape((steps_per_epoch, cfg.hyperparameters.batch_size_train))
+
+        if steps_per_epoch * cfg.hyperparameters.batch_size_train <= perms_train.shape[0]:
+            perms_train = perms_train[:steps_per_epoch * cfg.hyperparameters.batch_size_train]
+        else:
+            fit = int((steps_per_epoch * cfg.hyperparameters.batch_size_train) / perms_train.shape[0])
+            rem = ((steps_per_epoch * cfg.hyperparameters.batch_size_train) % perms_train.shape[0])
+            perms_train = jnp.concatenate(fit * [perms_train])
+            perms_train = jnp.concatenate([perms_train, perms_train[0:rem]])
+        perms_train = perms_train.reshape((steps_per_epoch, cfg.hyperparameters.batch_size_train))
 
     batch_metrics = []
-    dropout_rng = jax.random.split(rng, jax.local_device_count())[0]
+    dropout_rng, other_key = jax.random.split(rng)
     for perm_both in zip(perms_train, perms_unlabeled):
         batch_train = {k: v[perm_both[0], ...] for k, v in train_ds.items()}
+        try:
+            if cfg.hyperparameters.augmentations:
+                aug_key, other_key = jax.random.split(other_key)
+                batch_train['image'] = full_random_flip_function(batch_train['image'], aug_key)
+                if cfg.hyperparameters.dataset_name == 'Cifar10' or cfg.hyperparameters.dataset_name == 'Cifar100':
+                    aug_key, other_key = jax.random.split(other_key)
+                    batch_train['image'] = full_random_crop_function(batch_train['image'], aug_key)
+        except:
+            do_nothing = 1
         batch_unlabeled = {k: v[perm_both[1], ...] for k, v in unlabeled_ds.items()}
-        state, metrics, dropout_rng = train_step_diverse(state, batch_train, batch_unlabeled, dropout_rng,
-                                                         cfg.hyperparameters.mylambda, cfg.hyperparameters.prior_var,
-                                                         cfg.hyperparameters.beta,
-                                                         dataset_num_classes[cfg.hyperparameters.dataset_name])
+
+        try:
+            if cfg.hyperparameters.fast:
+                fast = True
+            else:
+                fast = False
+        except:
+            fast = False
+        if fast:
+            state, metrics, dropout_rng = train_step_diverse_fast(state, batch_train, batch_unlabeled, dropout_rng,
+                                                             cfg.hyperparameters.mylambda, cfg.hyperparameters.prior_var,
+                                                             cfg.hyperparameters.beta,
+                                                             dataset_num_classes[cfg.hyperparameters.dataset_name])
+        else:
+            state, metrics, dropout_rng = train_step_diverse(state, batch_train, batch_unlabeled, dropout_rng,
+                                                             cfg.hyperparameters.mylambda, cfg.hyperparameters.prior_var,
+                                                             cfg.hyperparameters.beta,
+                                                             dataset_num_classes[cfg.hyperparameters.dataset_name])
+
         batch_metrics.append(metrics)
 
     # compute mean of metrics across each batch in epoch.train_state
@@ -418,9 +568,18 @@ def train_epoch_standard(state, train_ds, epoch, rng, cfg, random_key_seed):
     perms = perms[:steps_per_epoch*cfg.hyperparameters.batch_size_train]
     perms = perms.reshape((steps_per_epoch, cfg.hyperparameters.batch_size_train))
     batch_metrics = []
-    dropout_rng = jax.random.split(rng, jax.local_device_count())[0]
+    dropout_rng, other_key = jax.random.split(rng)
     for perm in perms:
         batch = {k: v[perm, ...] for k, v in train_ds.items()}
+        try:
+            if cfg.hyperparameters.augmentations:
+                aug_key, other_key = jax.random.split(other_key)
+                batch['image'] = full_random_flip_function(batch['image'], aug_key)
+                if cfg.hyperparameters.dataset_name == 'Cifar10' or cfg.hyperparameters.dataset_name == 'Cifar100':
+                    aug_key, other_key = jax.random.split(other_key)
+                    batch['image'] = full_random_crop_function(batch['image'], aug_key)
+        except:
+            do_nothing =1
         state, metrics, dropout_rng = train_step_standard(state, batch, dropout_rng,
                                                           dataset_num_classes[cfg.hyperparameters.dataset_name])
         batch_metrics.append(metrics)

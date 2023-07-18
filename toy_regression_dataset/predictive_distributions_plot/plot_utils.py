@@ -15,7 +15,7 @@ def plot_predictives(path, axs, color=0, line_style='-'):
 
 
     cmap = plt.colormaps["plasma"]
-    axs.scatter(x_training, y_training, c='black')
+    axs.scatter(x_training, y_training, c='black', s=55)
     #axs.scatter(x_test, y_test, c='blue')
 
     mean = jnp.zeros(x_unlabeled.shape)

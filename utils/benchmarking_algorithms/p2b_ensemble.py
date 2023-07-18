@@ -8,6 +8,8 @@ from functools import partial
 from jax import jit
 from utils.train import create_train_state, cross_entropy_loss, evaluate_ensemble
 from utils.datasets import dataset_num_classes, get_datasets
+from utils.datasets import labels_dominoes, full_random_crop_function, full_random_flip_function
+from matplotlib import pyplot as plt
 
 
 def train_p2b_ensemble(cfg: DictConfig):
@@ -105,6 +107,15 @@ def train_epoch_p2b(states, train_ds, rngs, cfg):
         dropout_rngs.append(dropout_rng)
     for perm in perms:
         batch = {k: v[perm, ...] for k, v in train_ds.items()}
+        try:
+            if cfg.hyperparameters.augmentations:
+                aug_key, other_key = jax.random.split(dummy_rng)
+                batch['image'] = full_random_flip_function(batch['image'], aug_key)
+                if cfg.hyperparameters.dataset_name == 'Cifar10' or cfg.hyperparameters.dataset_name == 'Cifar100':
+                    aug_key, other_key = jax.random.split(other_key)
+                    batch['image'] = full_random_crop_function(batch['image'], aug_key)
+        except:
+            do_nothing = 1
         states, dropout_rngs = train_step_p2b(states,
                                               batch,
                                               dropout_rngs,

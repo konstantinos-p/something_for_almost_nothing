@@ -3,6 +3,8 @@ import tensorflow_datasets as tfds
 import tensorflow as tf
 from omegaconf import DictConfig
 import jax.numpy as jnp
+import jax
+from jax import random
 
 
 ood_dominoes = {
@@ -126,10 +128,6 @@ def get_datasets(cfg):
 
     if cfg.hyperparameters.mode == 'diverse':
         if cfg.hyperparameters.size_unlabeled > 0:
-            if cfg.hyperparameters.size_unlabeled < cfg.hyperparameters.size_training:
-                raise ValueError(
-                    "The size of the unlabeled set should be larger or equal to the training set."
-                )
             unlabeled_ds['image'] = unlabeled_ds['image'][:cfg.hyperparameters.size_unlabeled]
             unlabeled_ds['label'] = unlabeled_ds['label'][:cfg.hyperparameters.size_unlabeled]
 
@@ -381,3 +379,82 @@ def get_simple_ood_datasets(cfg):
     ds = combine_all_datasets(ds_mnist, ds_other, cfg)
 
     return ds['train'], ds['test'], ds['unlabeled'], ds['validation']
+
+
+def flip_left_right(img):
+    """Flips an image left/right direction."""
+    return jnp.fliplr(img)
+
+
+def identity(img):
+    """Returns an image as it is."""
+    return img
+
+
+def random_horizontal_flip(img, flip):
+    """Randomly flip an image vertically.
+
+    Args:
+        img: Array representing the image
+        flip: Boolean for flipping or not
+    Returns:
+        Flipped or an identity image
+    """
+
+    return jax.lax.cond(flip, flip_left_right, identity, img)
+
+
+def pad(img):
+    """Pads images with 4 pixels on all dimensions."""
+    return jnp.pad(img, ((0, 0), (4, 4), (4, 4), (0, 0)), 'constant', constant_values=((0, 0), (0, 0), (0, 0), (0, 0)))
+
+
+def crop(img, pos1, pos2):
+    """Crops an image to size 32 x 32"""
+    return jax.lax.dynamic_slice(img, (pos1, pos2, 0), (32, 32, 3))
+
+
+random_horizontal_flip_vmapped = jax.jit(jax.vmap(random_horizontal_flip, in_axes=(0, 0)))
+crop_vmapped = jax.jit(jax.vmap(crop, in_axes=(0, 0, 0)))
+
+
+def full_random_flip_function(batch, key):
+    """
+    The complete random flit function. Applies random flips to a minibatch.
+    Parameters
+    ----------
+    batch: jnp.array
+        An array of shape [batch_num, dim_1, dim_2, channel_num] which is a batch of training data.
+    key: jax.random.PRNGKey
+        A jax random PRNG key
+
+    Returns
+    -------
+        : jnp.array
+        An array of shape [batch_num, dim_1, dim_2, channel_num] which is a batch of training data flipped randomly.
+    """
+    flip = random.randint(key, shape=[batch.shape[0]], minval=0, maxval=2)
+    return random_horizontal_flip_vmapped(batch, flip)
+
+
+def full_random_crop_function(batch, key):
+    """
+    The complete random flit function. Applies random flips to a minibatch.
+    Parameters
+    ----------
+    batch: jnp.array
+        An array of shape [batch_num, dim_1, dim_2, channel_num] which is a batch of training data.
+    key: jax.random.PRNGKey
+        A jax random PRNG key
+
+    Returns
+    -------
+        : jnp.array
+        An array of shape [batch_num, dim_1, dim_2, channel_num] which is a batch of training data cropped randomly.
+    """
+    batch = pad(batch)
+    key, subkey = random.split(key)
+    pos1 = random.randint(subkey, shape=[batch.shape[0]], minval=0, maxval=8)
+    key, subkey = random.split(key)
+    pos2 = random.randint(subkey, shape=[batch.shape[0]], minval=0, maxval=8)
+    return crop_vmapped(batch, pos1, pos2)
