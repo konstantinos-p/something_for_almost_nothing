@@ -5,6 +5,7 @@ from omegaconf import DictConfig
 import jax.numpy as jnp
 import jax
 from jax import random
+import numpy as np
 
 
 ood_dominoes = {
@@ -37,6 +38,236 @@ dataset_num_classes = {
     'Cifar10_dominoes': 10,
     'fashion_mnist_dominoes': 10
 }
+
+cifar10_corruptions = [
+    'brightness',
+    'contrast',
+    'defocus_blur',
+    'elastic',
+    'fog',
+    'frost',
+    'frosted_glass_blur',
+    'gaussian_blur',
+    'gaussian_noise',
+    'impulse_noise',
+    'jpeg_compression',
+    'motion_blur',
+    'pixelate',
+    'saturate',
+    'shot_noise',
+    'snow',
+    'spatter',
+    'speckle_noise',
+    'zoom_blur'
+]
+
+
+cifar10_corruption_severities = [1, 2, 3, 4, 5]
+
+
+dataset_names_lower_case = {
+    'Cifar10': 'cifar10',
+    'Cifar100': 'cifar100',
+    'fashion_mnist': 'fashion_mnist',
+    'svhn_cropped': 'svhn_cropped'
+}
+
+
+def get_randomized_datasets(cfg):
+    """
+    Returns one list for each of the following sets: train, validation, unlabeled, test. Each list contains two entries
+    one for the original set and one for the transformed set.
+
+    Parameters
+    ----------
+    cfg : DictConfig
+        The configuration file for the experiment.
+
+    Returns
+    -------
+
+    """
+    # Get the original datasets
+    original_train_ds, original_test_ds, original_unlabeled_ds, original_validation_ds = get_datasets(cfg)
+
+    shuffled_labels = jnp.reshape(jnp.arange(dataset_num_classes[cfg.hyperparameters.dataset_name]),
+                                  (1, -1)).T @ jnp.ones((1, original_unlabeled_ds['label'].shape[0]))
+
+    key_shuffle_labels = jax.random.PRNGKey(cfg.hyperparameters.seed_shuffle_labels)
+
+    shuffled_labels = jax.random.shuffle(key=key_shuffle_labels, x=shuffled_labels, axis=0)
+
+    train_ds_list = []
+    #test_ds_list = []
+    unlabeled_ds_list = []
+    #validation_ds_list = []
+
+    for i in range(cfg.hyperparameters.ensemble_size):
+        train_ds_list.append(original_train_ds)
+        #test_ds_list.append(original_test_ds)
+        #validation_ds_list.append(original_validation_ds)
+
+        original_unlabeled_ds_tmp = original_unlabeled_ds.copy()
+        original_unlabeled_ds_tmp['label'] = shuffled_labels[i]
+        unlabeled_ds_list.append(original_unlabeled_ds_tmp)
+
+    return train_ds_list, original_test_ds, unlabeled_ds_list, original_validation_ds
+
+
+def get_canny_sobel_and_original_datasets(cfg):
+    """
+    Returns one list for each of the following sets: train, validation, unlabeled, test. Each list contains two entries
+    one for the original set and one for the transformed set.
+
+    Parameters
+    ----------
+    cfg : DictConfig
+        The configuration file for the experiment.
+
+    Returns
+    -------
+
+    """
+
+    # Get the original datasets
+    original_train_ds, original_test_ds, original_unlabeled_ds, original_validation_ds = get_datasets(cfg)
+
+    # Get the transformed datasets
+    transformed_train_ds, transformed_test_ds, transformed_unlabeled_ds, transformed_validation_ds = get_canny_sobel_transformed_datasets(cfg)
+
+    return [original_train_ds, transformed_train_ds], \
+           [original_test_ds, transformed_test_ds], \
+           [original_unlabeled_ds, transformed_unlabeled_ds], \
+           [original_validation_ds, transformed_validation_ds]
+
+
+def get_canny_sobel_transformed_datasets(cfg):
+    """
+    Loads a dataset transformed using the canny and sobel edge detectors as described in the paper Jain, Saachi,
+    Dimitris Tsipras, and Aleksander Madry. "Combining diverse feature priors."
+    International Conference on Machine Learning. PMLR, 2022.
+
+    Parameters
+    -------
+    cfg : DictConfig
+        The configuration file for the experiment.
+
+    Returns
+    -------
+    transformed_train_ds: dict
+        Dictionary with keys 'image' and 'label' corresponding to the training set.
+    transformed_test_ds: dict
+        Dictionary with keys 'image' and 'label' corresponding to the test set.
+    transformed_unlabeled_ds: dict
+        Dictionary with keys 'image' and 'label' corresponding to the unlabeled set.
+    transformed_validation_ds: dict
+        Dictionary with keys 'image' and 'label' corresponding to the validation set.
+
+
+    """
+    # Create the transformed datasets
+    dataset_path = cfg.server.canny_sobel_path
+
+    # Load transformed training set
+    transformed_train_ds_tmp = {}
+    transformed_train_ds_tmp['image'] = np.load(dataset_path+cfg.hyperparameters.dataset_transform+'_transform_datasets/'
+                                   +dataset_names_lower_case[cfg.hyperparameters.dataset_name]
+                                   +'_'+cfg.hyperparameters.dataset_transform+'/'
+                                   +dataset_names_lower_case[cfg.hyperparameters.dataset_name]+'_'
+                                   +cfg.hyperparameters.dataset_transform+'_train_ds_image.npy')
+
+    transformed_train_ds_tmp['label'] = np.load(dataset_path+cfg.hyperparameters.dataset_transform+'_transform_datasets/'
+                                   +dataset_names_lower_case[cfg.hyperparameters.dataset_name]
+                                   +'_'+cfg.hyperparameters.dataset_transform+'/'
+                                   +dataset_names_lower_case[cfg.hyperparameters.dataset_name]+'_'
+                                   +cfg.hyperparameters.dataset_transform+'_train_ds_label.npy')
+
+    # Load transformed test set
+    transformed_test_ds = {}
+    transformed_test_ds['image'] = np.load(dataset_path+cfg.hyperparameters.dataset_transform + '_transform_datasets/'
+                                            + dataset_names_lower_case[cfg.hyperparameters.dataset_name]
+                                            + '_' + cfg.hyperparameters.dataset_transform + '/'
+                                            + dataset_names_lower_case[cfg.hyperparameters.dataset_name] + '_'
+                                            + cfg.hyperparameters.dataset_transform + '_test_ds_image.npy')
+
+    transformed_test_ds['label'] = np.load(dataset_path+cfg.hyperparameters.dataset_transform + '_transform_datasets/'
+                                            + dataset_names_lower_case[cfg.hyperparameters.dataset_name]
+                                            + '_' + cfg.hyperparameters.dataset_transform + '/'
+                                            + dataset_names_lower_case[cfg.hyperparameters.dataset_name] + '_'
+                                            + cfg.hyperparameters.dataset_transform + '_test_ds_label.npy')
+
+    # Perform dataset splits
+
+    transformed_train_ds_tmp['image'] = jnp.float32(transformed_train_ds_tmp['image'])/255.
+    transformed_test_ds['image'] = jnp.float32(transformed_test_ds['image'])/255.
+
+    transformed_train_ds_tmp['label'] = jnp.int32(transformed_train_ds_tmp['label'])
+    transformed_test_ds['label'] = jnp.int32(transformed_test_ds['label'])
+
+    transformed_train_ds_tmp = {i: transformed_train_ds_tmp[i] for i in transformed_train_ds_tmp if i != 'id' and i != 'coarse_label'}
+    transformed_test_ds = {i: transformed_test_ds[i] for i in transformed_test_ds if i != 'id' and i != 'coarse_label'}
+
+    transformed_validation_ds = {}
+    transformed_unlabeled_ds = {}
+    transformed_train_ds = {}
+
+    transformed_validation_ds['image'] = transformed_train_ds_tmp['image'][0:cfg.hyperparameters.size_validation]
+    transformed_validation_ds['label'] = transformed_train_ds_tmp['label'][0:cfg.hyperparameters.size_validation]
+
+    transformed_train_ds['image'] = transformed_train_ds_tmp['image'][cfg.hyperparameters.size_validation:cfg.hyperparameters.size_validation
+                                                                              +cfg.hyperparameters.size_training]
+    transformed_train_ds['label'] = transformed_train_ds_tmp['label'][cfg.hyperparameters.size_validation:cfg.hyperparameters.size_validation
+                                                                              +cfg.hyperparameters.size_training]
+
+
+
+    transformed_unlabeled_ds['image'] = transformed_train_ds_tmp['image'][
+                            cfg.hyperparameters.size_validation + cfg.hyperparameters.size_training:]
+    transformed_unlabeled_ds['label'] = transformed_train_ds_tmp['label'][
+                            cfg.hyperparameters.size_validation + cfg.hyperparameters.size_training:]
+
+    if cfg.hyperparameters.mode == 'diverse':
+        if cfg.hyperparameters.size_unlabeled > 0:
+            transformed_unlabeled_ds['image'] = transformed_unlabeled_ds['image'][:cfg.hyperparameters.size_unlabeled]
+            transformed_unlabeled_ds['label'] = transformed_unlabeled_ds['label'][:cfg.hyperparameters.size_unlabeled]
+
+    return transformed_train_ds, transformed_test_ds, transformed_unlabeled_ds, transformed_validation_ds
+
+
+def get_cifar10_corrupted(corruption, severity, dataset_dir='default'):
+    """
+    Loads the corrupted cifar10 from Benchmarking Neural Network Robustness to Common Corruptions and Perturbations
+    https://arxiv.org/abs/1903.12261.
+    Returns
+    -------
+    corruption: str
+        The corruption applied to the base dataset.
+    severity: int
+        The severity of the corruption to be applied. Should take values 1-5.
+    dataset_dir: str
+        The directory where the dataset is stored.
+    """
+    if severity not in [1, 2, 3, 4, 5]:
+        raise TypeError('The severity parameter should be an integer in the range 1-5.')
+
+    if str(corruption) not in cifar10_corruptions:
+        raise TypeError('The corruption type should be an integer in the range:'+' '.join(' '+mstr for mstr in cifar10_corruptions))
+
+    if dataset_dir == 'default':
+        ds_builder = tfds.builder('cifar10_corrupted/'+corruption+'_'+str(severity))
+        ds_builder.download_and_prepare()
+        test_ds = tfds.as_numpy(ds_builder.as_dataset(split='test',
+                                                      batch_size=-1))
+    else:
+        test_ds = tfds.load(name='cifar10_corrupted/'+corruption+'_'+str(severity),
+                            data_dir=dataset_dir,
+                            split='test',
+                            batch_size=-1)
+
+    test_ds['image'] = jnp.float32(test_ds['image'])/255.
+    test_ds['label'] = jnp.int32(test_ds['label'])
+
+    return test_ds
 
 
 def get_datasets(cfg):

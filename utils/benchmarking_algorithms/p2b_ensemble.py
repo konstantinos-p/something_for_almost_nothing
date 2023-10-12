@@ -10,6 +10,7 @@ from utils.train import create_train_state, cross_entropy_loss, evaluate_ensembl
 from utils.datasets import dataset_num_classes, get_datasets
 from utils.datasets import labels_dominoes, full_random_crop_function, full_random_flip_function
 from matplotlib import pyplot as plt
+import json
 
 
 def train_p2b_ensemble(cfg: DictConfig):
@@ -60,8 +61,27 @@ def train_p2b_ensemble(cfg: DictConfig):
             with validation_summary_writer.as_default():
                 tf.summary.scalar('accuracy', validation_metrics['accuracy'], step=epoch)
         '''
-    validation_metrics = evaluate_ensemble(directory, validation_ds, cfg)
-    validation_metrics = jax.device_get(validation_metrics)
+    test_metrics = evaluate_ensemble(path_to_ensemble=os.getcwd(),
+                                     split_ds=test_ds,
+                                     cfg=cfg,
+                                     activate_delete=False)
+
+    validation_metrics = evaluate_ensemble(path_to_ensemble=os.getcwd(),
+                                           split_ds=validation_ds,
+                                           cfg=cfg,
+                                           activate_delete=True)
+
+    #test_metrics = jax.device_get(test_metrics)
+    #validation_metrics = jax.device_get(validation_metrics)
+
+    #Save the metrics
+    with open('test_metrics.json', 'w') as outfile:
+        json.dump(test_metrics, outfile)
+    with open('validation_metrics.json', 'w') as outfile:
+        json.dump(validation_metrics, outfile)
+
+    print('Test metrics are: ')
+    print(test_metrics)
     print('final validation epoch batched: %d, loss: %.2f, accuracy: %.2f, ECE: %.2f, TACE: %.2f, Brier: %.2f' % (
         epoch, validation_metrics['loss'],
         validation_metrics['accuracy']*100,

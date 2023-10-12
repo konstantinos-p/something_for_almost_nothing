@@ -27,28 +27,41 @@ def get_conf_and_evaluate(argv):
 
     """
 
-    opts, args = getopt.getopt(argv, "i:o:", ["path=", "mode="])
+    opts, args = getopt.getopt(argv, "i:o:f:", ["path=", "mode=", "ensemble_size="])
+
+    ensemble_size = 0
 
     for opt, arg in opts:
         if opt in ('-i', '--path'):
             path_to_model = arg
         elif opt in ('-o', '--mode'):
             mode = arg
+        elif opt in ('-f', '--ensemble_size'):
+            ensemble_size = int(arg)
 
     if mode == 'single':
         path_config = path_to_model+".hydra/"
     elif mode == 'ensemble':
-        path_config = path_to_model + ".hydra/"
+        path_config = path_to_model + ".hydra/"#/0/.hydra/
 
     with initialize(version_base=None, config_path=path_config):
         # config is relative to a module
         cfg = compose(config_name="config")
 
     train_ds, test_ds, unlabeled_ds, validation_ds = get_datasets(cfg=cfg)
+
     if mode == 'single':
         res = evaluate_saved_models(path_to_model + '/ckpts/checkpoint_0', cfg=cfg, split_ds=test_ds)
     elif mode == 'ensemble':
-        res = evaluate_ensemble(path_to_model, cfg=cfg, split_ds=test_ds)
+        if ensemble_size == 0:
+            res = evaluate_ensemble(path_to_model,
+                                    cfg=cfg,
+                                    split_ds=test_ds)
+        else:
+            res = evaluate_ensemble(path_to_model,
+                                    cfg=cfg,
+                                    split_ds=test_ds,
+                                    ensemble_size=ensemble_size)
     print(res)
     return res
 

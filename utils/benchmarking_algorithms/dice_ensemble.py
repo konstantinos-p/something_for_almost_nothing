@@ -14,6 +14,7 @@ from utils.datasets import labels_dominoes, full_random_crop_function, full_rand
 from utils.benchmarking_models import benchmarking_models
 from flax import linen as nn
 from matplotlib import pyplot as plt
+import json
 
 
 def beta_coef(epoch, cfg):
@@ -161,10 +162,20 @@ def train_dice_ensemble(cfg: DictConfig):
             with validation_summary_writer.as_default():
                 tf.summary.scalar('accuracy', validation_metrics['accuracy'], step=epoch)
         '''
+    test_metrics = evaluate_ensemble(directory, test_ds, cfg, activate_delete=False)
+    test_metrics = jax.device_get(test_metrics)
 
-
-    validation_metrics = evaluate_ensemble(directory, validation_ds, cfg)
+    validation_metrics = evaluate_ensemble(directory, validation_ds, cfg, activate_delete=True)
     validation_metrics = jax.device_get(validation_metrics)
+
+    #Save the metrics
+    with open('test_metrics.json', 'w') as outfile:
+        json.dump(test_metrics, outfile)
+    with open('validation_metrics.json', 'w') as outfile:
+        json.dump(validation_metrics, outfile)
+
+    print('Test metrics are: ')
+    print(test_metrics)
     print('final validation epoch batched: %d, loss: %.2f, accuracy: %.2f, ECE: %.2f, TACE: %.2f, Brier: %.2f' % (
         epoch, validation_metrics['loss'],
         validation_metrics['accuracy']*100,
@@ -407,7 +418,7 @@ def vceb_and_diversity_loss_step(states_list_dict, adversarial_state, batch, dro
     return new_states, adversarial_state, new_dropout_rngs
 
 
-def evaluate_saved_models(paths_network, paths_classifier, split_ds, cfg):
+def evaluate_saved_models(paths_network, paths_classifier, split_ds, cfg, activate_delete=True):
     """
     Gets as an input a list of paths to different models minima. If the list has len>1 then it computes an average of
     the logits treating the list as an ensemble. The metrics are estimated for the average logits (the average is taken
@@ -449,7 +460,7 @@ def evaluate_saved_models(paths_network, paths_classifier, split_ds, cfg):
         logits_total, labels_total = eval_model(restored_network_state, restored_classifier_state, split_ds)
         preds.append(softmax(logits_total))
 
-        if cfg.hyperparameters.delete_checkpoints:
+        if cfg.hyperparameters.delete_checkpoints and activate_delete:
             os.remove(path_network)
             os.remove(path_classifier)
 
@@ -463,7 +474,7 @@ def evaluate_saved_models(paths_network, paths_classifier, split_ds, cfg):
     return validation_metrics
 
 
-def evaluate_ensemble(path_to_ensemble, split_ds, cfg):
+def evaluate_ensemble(path_to_ensemble, split_ds, cfg, activate_delete=True):
     """
     Gets a path to an ensemble and evaluates its metrics.
     Parameters
@@ -489,7 +500,11 @@ def evaluate_ensemble(path_to_ensemble, split_ds, cfg):
             paths_network.append(path_to_ensemble + '/' + dir + '/ckpts/network_0')
             paths_classifier.append(path_to_ensemble + '/' + dir + '/ckpts/classifier_0')
 
-    validation_metrics = evaluate_saved_models(paths_network, paths_classifier, split_ds=split_ds, cfg=cfg)
+    validation_metrics = evaluate_saved_models(paths_network,
+                                               paths_classifier,
+                                               split_ds=split_ds,
+                                               cfg=cfg,
+                                               activate_delete=activate_delete)
 
     return validation_metrics
 

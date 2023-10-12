@@ -1,0 +1,4 @@
+defaults:
+  - hyperparameters: sam
+  - server: jeanzay
+  - optimizer: sgd

@@ -3,6 +3,7 @@ from functools import partial
 from flax.linen.initializers import he_normal, zeros, ones
 from typing import (Any, Callable, Tuple)
 from utils.fixup_initializer import fixup
+from utils.models_ViT import VisionTransformer, Encoder
 
 PRNGKey = Any
 Shape = Tuple[int, ...]
@@ -217,13 +218,31 @@ class MLP(nn.Module):
         x = nn.Dense(features=self.num_classes)(x)
         return x
 
-
+# Resnet
 FixupWideResNet16 = partial(FixupWideResNet, depth=16, widen_factor=4, dropRate=0.3)
 FixupWideResNet22 = partial(FixupWideResNet, depth=22, widen_factor=4, dropRate=0.3)
-FixupWideResNet28 = partial(FixupWideResNet, depth=52, widen_factor=4, dropRate=0.3)
+FixupWideResNet52 = partial(FixupWideResNet, depth=52, widen_factor=4, dropRate=0.3)
+
+# LeNet and MLP
 LeNet = partial(LeNetStandard, hidden=256)
 MLP_Large = partial(MLP, hidden1=784, hidden2=500, hidden3=300)
 MLP_Small = partial(MLP, hidden1=300, hidden2=200, hidden3=100)
+
+# ViT
+ViT_S_16 = partial(VisionTransformer,
+                   patches=(16, 16),
+                   hidden_size=384,
+                   resnet=None,
+                   representation_size=None,
+                   classifier='token',
+                   head_bias_init=0.,
+                   transformer={'mlp_dim': 1536,
+                                'num_heads': 6,
+                                'num_layers': 12,
+                                'attention_dropout_rate': 0,
+                                'dropout_rate': 0},
+                   model_name='ViT-S_16'
+                   )
 
 # Used for testing
 _FixupWideResNet10 = partial(FixupWideResNet, depth=10, widen_factor=1, num_classes=10, dropRate=0.3)

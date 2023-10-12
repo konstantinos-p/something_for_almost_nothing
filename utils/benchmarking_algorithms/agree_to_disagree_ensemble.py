@@ -9,6 +9,7 @@ from flax import linen as nn
 from jax import jit
 from functools import partial
 import math
+import json
 
 
 def train_agree_to_disagree_ensemble(cfg: DictConfig):
@@ -65,8 +66,20 @@ def train_agree_to_disagree_ensemble(cfg: DictConfig):
                 os.remove(str(i) + '/' + cfg.hyperparameters.CKPT_DIR + '/checkpoint_0')
         checkpoints.save_checkpoint(ckpt_dir=str(i) + '/' + cfg.hyperparameters.CKPT_DIR, target=state, step=0)
 
-    validation_metrics = evaluate_ensemble(directory, validation_ds, cfg)
-    validation_metrics = jax.device_get(validation_metrics)
+    test_metrics = evaluate_ensemble(directory, test_ds, cfg, activate_delete=False)
+    #test_metrics = jax.device_get(test_metrics)
+
+    validation_metrics = evaluate_ensemble(directory, validation_ds, cfg, activate_delete=True)
+    #validation_metrics = jax.device_get(validation_metrics)
+
+    #Save the metrics
+    with open('test_metrics.json', 'w') as outfile:
+        json.dump(test_metrics, outfile)
+    with open('validation_metrics.json', 'w') as outfile:
+        json.dump(validation_metrics, outfile)
+
+    print('Test metrics are: ')
+    print(test_metrics)
     print('final validation loss: %.2f, accuracy: %.2f, ECE: %.2f, TACE: %.2f, Brier: %.2f' % (
         validation_metrics['loss'],
         validation_metrics['accuracy']*100,
@@ -276,7 +289,7 @@ def train_step_agree_to_disagree(current_member,
     return current_member
 
 
-def evaluate_ensemble(path_to_ensemble, split_ds, cfg):
+def evaluate_ensemble(path_to_ensemble, split_ds, cfg, activate_delete=True):
     """
     Gets a path to an ensemble and evaluates its metrics.
     Parameters
@@ -301,9 +314,6 @@ def evaluate_ensemble(path_to_ensemble, split_ds, cfg):
             if not cfg.hyperparameters.neglect_first_ensemble_member or not dir == '0':
                 paths.append(path_to_ensemble + '/' + dir + '/ckpts/checkpoint_0')
 
-
-
-
-    validation_metrics = evaluate_saved_models(paths, split_ds=split_ds, cfg=cfg)
+    validation_metrics = evaluate_saved_models(paths, split_ds=split_ds, cfg=cfg, activate_delete=activate_delete)
 
     return validation_metrics
