@@ -1,4 +1,0 @@
-defaults:
-  - hyperparameters: diverse
-  - server: local
-  - optimizer: adamw

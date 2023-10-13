@@ -1,5 +1,0 @@
-prngkeyseed: 0
-learning_rate: 0.001
-epochs: 5000
-mode: 'standard'
-CKPT_DIR: 'ckpts'
