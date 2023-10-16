@@ -5,13 +5,13 @@ We present a method to improve the calibration of deep ensembles in the small tr
 $\nu$-ensembles are trained based on the following algorithm
 
 <p align="center">
-    <img src="/assets/img/nu_ensembles.png" height="150"/>
+    <img src="/assets/img/nu_ensembles.png"/>
 </p>
 
 Below we see some results on the CIFAR-10 and CIFAR-100 datasets
 
 <p align="center">
-    <img src="/assets/img/cifar10_cifar100.png" height="150"/>
+    <img src="/assets/img/cifar10_cifar100.png"/>
 </p>
 
 <h2> :bookmark: Usage.</h2>
